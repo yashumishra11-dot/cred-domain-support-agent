@@ -228,6 +228,8 @@
             font-size: 14.5px;
             line-height: 1.6;
             position: relative;
+            white-space: pre-wrap;
+            word-break: break-word;
         }
 
         .message.user .message-bubble {
@@ -537,7 +539,7 @@
 
             msgDiv.innerHTML = `
                 <div class="message-bubble">
-                    <div>${escapeHtml(data.final_answer)}</div>
+                    <div>${formatMessageContent(data.final_answer)}</div>
                     <div class="meta-container">
                         <span class="badge ${typeBadgeClass}">${escapeHtml(data.response_type)}</span>
                         ${escalationHtml}
@@ -548,6 +550,14 @@
             `;
             chatHistory.appendChild(msgDiv);
             window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        }
+
+        function formatMessageContent(str) {
+            if (!str) return '';
+            let escaped = escapeHtml(str);
+            // Convert markdown bold **text** to <strong>text</strong>
+            escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            return escaped;
         }
 
         function escapeHtml(str) {

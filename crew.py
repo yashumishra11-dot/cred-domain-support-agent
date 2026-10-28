@@ -252,9 +252,103 @@ def clear_session_history(session_id: str):
         _SESSION_HISTORIES[session_id].clear()
 
 
-# ==============================================================================
-# 5. END-TO-END ORCHESTRATION PIPELINE (Tasks 7, 8, 9, 10)
-# ==============================================================================
+LOAN_TYPES_DETAIL = {
+    "personal": (
+        "For **Personal Loans**, applicants must be salaried or self-employed individuals aged 21 to 58 years "
+        "with a minimum monthly net income of INR 25,000. Interest rates range from 10.49% to 21.99% based on credit score. "
+        "KYC requires PAN, Aadhaar, and the latest 3 months bank statements reflecting salary credits."
+    ),
+    "home": (
+        "For **Home Loans**, applicants require a minimum employment or operational vintage of at least two years "
+        "along with audited financial records. Secured Home Loan interest rates start at 8.35% per annum for prime tier borrowers "
+        "and scale up to 10.75% based on loan-to-value (LTV) ratios."
+    ),
+    "auto": (
+        "For **Auto Loans**, applicants require valid vehicle collateral or a creditworthy co-borrower guarantee. "
+        "Financing is available for up to 85%–90% on-road price with flexible repayment tenors up to 7 years."
+    ),
+    "education": (
+        "For **Education Loans**, applicants require an official admission letter from an accredited degree institution "
+        "and a co-borrower guarantee meeting credit standards. Moratorium covers course duration plus 6 months grace."
+    ),
+    "business": (
+        "For **Business Loans**, companies require at least two years of verifiable operational vintage, healthy cash flows, "
+        "and audited financial records. Floating interest rates range from 13.5% to 24.0% per annum."
+    )
+}
+
+
+def check_loan_category_disambiguation(sanitized_query: str, prior_messages: List[BaseMessage]) -> Optional[str]:
+    """
+    Checks if a query is a generic loan inquiry without specifying the category.
+    If generic, prompts the user to select from Cred's 5 loan categories instead of
+    prematurely assuming Personal Loan.
+    If user is following up after being asked, resolves their selected category.
+    """
+    q_lower = sanitized_query.lower()
+
+    # Detect specific loan category
+    matched_cat = None
+    if "personal" in q_lower:
+        matched_cat = "personal"
+    elif any(k in q_lower for k in ["home", "housing", "property", "mortgage"]):
+        matched_cat = "home"
+    elif any(k in q_lower for k in ["auto", "car", "vehicle", "bike", "automobile"]):
+        matched_cat = "auto"
+    elif any(k in q_lower for k in ["education", "student", "study", "college"]):
+        matched_cat = "education"
+    elif any(k in q_lower for k in ["business", "commercial", "msme", "enterprise", "startup"]):
+        matched_cat = "business"
+
+    # Check if prior assistant message asked to choose between loan categories
+    prior_asked_category = False
+    if prior_messages:
+        for msg in reversed(prior_messages):
+            if isinstance(msg, AIMessage) and (
+                "which type of loan" in msg.content.lower()
+                or "5 distinct loan product categories" in msg.content.lower()
+            ):
+                prior_asked_category = True
+                break
+
+    # If the user is responding to the prior disambiguation prompt
+    if prior_asked_category and matched_cat:
+        return (
+            f"Based on verified Cred lending policy (KB-DOC-001, KB-DOC-007):\n"
+            f"{LOAN_TYPES_DETAIL[matched_cat]}\n\n"
+            f"Would you like to check required documents or EMI calculation details for this loan?"
+        )
+
+    # Check if this query is a generic loan request (without specifying category)
+    generic_patterns = [
+        r"\b(?:apply|applying|application|take|taking|get|getting|need|needing|want|wanting|avail|availing|explore|exploring|inquire|inquiring|seek|seeking|looking\s+for)\s+(?:for\s+)?(?:a\s+)?loans?\b",
+        r"\b(?:can|how)\s+(?:can|do|to)?\s*i\s+(?:apply|get|take|avail)\s+(?:for\s+)?(?:a\s+)?loans?\b",
+        r"^(?:i\s+)?(?:want|need|wish|looking\s+to|like\s+to|would\s+like\s+to|im\s+looking\s+for|i\s+am\s+looking\s+for)\s+(?:to\s+)?(?:apply|get|take|avail)?\s*(?:for\s+)?(?:a\s+)?loans?\.?$",
+        r"^\s*loans?\s+(?:application|options?|products?|types?|facilities|eligibility)\s*$",
+        r"^\s*(?:apply|take|get)\s+(?:for\s+)?loans?\s*$",
+        r"\bhow\s+to\s+(?:apply|get|take|avail)\s+(?:for\s+)?(?:a\s+)?loans?\b",
+        r"\b(?:tell\s+me\s+about|what|which)\s+(?:are\s+the\s+)?(?:different\s+)?(?:types?\s+of\s+)?loans?\b",
+        r"\bwhat\s+(?:kinds?|types?)\s+of\s+loans?\b",
+        r"\bdo\s+you\s+(?:offer|provide|have)\s+loans?\b",
+        r"\b(?:loans?\s+eligibility|eligibility\s+(?:for\s+)?(?:a\s+)?loans?)\b",
+        r"\binterested\s+in\s+(?:a\s+)?loans?\b",
+        r"\bborrow\s+money\b"
+    ]
+
+    is_generic = any(re.search(pat, q_lower) for pat in generic_patterns)
+    if is_generic and not matched_cat:
+        return (
+            "Cred offers 5 distinct loan product categories:\n"
+            "• **Personal Loan** (Unsecured, instant approval up to INR 5 Lakhs)\n"
+            "• **Home Loan** (Prime rates from 8.35% p.a.)\n"
+            "• **Auto Loan** (New & pre-owned vehicle financing)\n"
+            "• **Education Loan** (Domestic & international degree financing)\n"
+            "• **Business Loan** (MSME working capital & expansion)\n\n"
+            "Which type of loan would you like to apply for or explore eligibility criteria for?"
+        )
+
+    return None
+
 
 def execute_support_query(
     query: str,
@@ -296,7 +390,7 @@ def execute_support_query(
     history = get_session_history(session_id)
 
     # Check if conversation history has prior record context
-    prior_messages = history.messages
+    prior_messages = list(history.messages)
     has_prior_record = None
     for msg in reversed(prior_messages):
         m = re.search(r"\bCRD-APP-\d{4}\b", msg.content, re.IGNORECASE)
@@ -310,6 +404,22 @@ def execute_support_query(
 
     # Update session memory with incoming user turn
     history.add_message(HumanMessage(content=sanitized_query))
+
+    # Check for Loan Category Disambiguation (e.g. user asks generically 'I want to apply for a loan')
+    disambiguation_response = check_loan_category_disambiguation(sanitized_query, prior_messages)
+    if disambiguation_response:
+        response = AgentResponseSchema(
+            query=sanitized_query,
+            response_type="POLICY_ANSWER",
+            final_answer=disambiguation_response,
+            sources=["KB-DOC-001"],
+            escalation_score=None,
+            escalated=False,
+            grounded=True,
+            trace_id=trace_id
+        )
+        history.add_message(AIMessage(content=response.final_answer))
+        return response
 
     crew, retrieval_agent, lookup_agent, composer_agent = create_cred_crew(verbose=False)
 
