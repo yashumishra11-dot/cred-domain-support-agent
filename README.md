@@ -1,5 +1,6 @@
 # Cred Domain Support Agent (CrewAI + AutoGen + FastAPI)
 
+**Repository:** [https://github.com/yashumishra11-dot/cred-domain-support-agent](https://github.com/yashumishra11-dot/cred-domain-support-agent)  
 **Track:** Banking & FinTech (Cred)  
 **Execution Environment:** 100% Local & Deterministic (`MOCK_LLM` mode, Zero Paid API Keys, Zero Cloud Network Calls)
 
