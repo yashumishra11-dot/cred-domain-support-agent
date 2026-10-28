@@ -14,7 +14,7 @@ import asyncio
 from typing import Dict, Any, Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from schemas import AgentResponseSchema, AskRequest, AddDocumentRequest
@@ -40,14 +40,17 @@ app.add_middleware(
 )
 
 
-@app.get("/")
-def root():
-    return {
-        "service": "Cred Domain Support Agent",
-        "track": "Banking & FinTech (Cred)",
-        "status": "online",
-        "endpoints": ["/ask", "/add-document", "/health", "/ws/chat"]
-    }
+STATIC_INDEX_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "index.html")
+
+
+@app.get("/", response_class=HTMLResponse)
+@app.get("/chat", response_class=HTMLResponse)
+def serve_chat_ui():
+    """Serves the interactive Cred Domain Support Agent Web Interface."""
+    if os.path.exists(STATIC_INDEX_FILE):
+        with open(STATIC_INDEX_FILE, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    return HTMLResponse("<h2>Cred Support Agent API</h2><p>Visit <a href='/docs'>/docs</a> for Swagger UI.</p>")
 
 
 @app.get("/health")
